@@ -64,7 +64,7 @@ async function censusSearch(q) {
 function label(p) {
   const street = [p.housenumber, p.street].filter(Boolean).join(' ')
   const first = p.name && p.name !== street ? p.name : street
-  return [first, p.name && p.name !== street ? street : null, p.city, p.state].filter(Boolean).join(', ')
+  return [first, p.name && p.name !== street ? street : null, p.city].filter(Boolean).join(', ') // all results are in California
 }
 
 // Order: map results with the typed house number, then Census address matches, then the rest.

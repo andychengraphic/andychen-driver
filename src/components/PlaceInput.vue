@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { cachedGuess, searchPlaces, warmUp } from '../geo'
 
 // Address field with suggestions. v-model holds the chosen place ({ label, lat, lon }) or null.
@@ -14,6 +14,19 @@ const open = ref(false)
 const active = ref(-1)
 let timer, latest = 0
 
+// The field is a textarea so a long address wraps instead of being cut off. It grows to fit its
+// text and never takes a line break (Enter picks a suggestion; pasted line breaks become spaces).
+const box = ref(null)
+function fit() {
+  const el = box.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
+}
+watch(text, () => nextTick(fit))
+onMounted(() => { fit(); addEventListener('resize', fit) })
+onUnmounted(() => removeEventListener('resize', fit))
+
 function show(list) {
   results.value = list
   open.value = list.length > 0
@@ -23,6 +36,7 @@ function show(list) {
 // Suggestions appear at once from earlier answers where possible, then the server's answer
 // replaces them. Answers to queries the user has typed past are ignored, not cancelled.
 watch(text, (q) => {
+  if (/[\r\n]/.test(q)) { text.value = q.replace(/\s*[\r\n]+\s*/g, ' '); return }
   if (place.value && q === place.value.label) return
   place.value = null
   clearTimeout(timer)
@@ -47,6 +61,7 @@ function choose(p) {
 }
 
 function onKey(e) {
+  if (e.key === 'Enter' && !(open.value && active.value >= 0)) { e.preventDefault(); return }
   if (!open.value) return
   if (e.key === 'ArrowDown') { e.preventDefault(); active.value = (active.value + 1) % results.value.length }
   else if (e.key === 'ArrowUp') { e.preventDefault(); active.value = (active.value - 1 + results.value.length) % results.value.length }
@@ -61,10 +76,12 @@ function onKey(e) {
     <p v-if="hint" :id="`${id}-hint`" class="mt-1 text-[14px] leading-snug text-[#8a8a8a]">({{ hint }})</p>
     <p v-if="error" :id="`${id}-error`" class="text-[14px] leading-snug text-[#c62828]">{{ error }}</p>
     <div class="relative">
-    <input
+    <textarea
       :id="id"
+      ref="box"
       v-model="text"
-      class="field"
+      rows="1"
+      class="field block resize-none overflow-hidden"
       :placeholder="placeholder"
       autocomplete="off"
       role="combobox"
@@ -76,7 +93,7 @@ function onKey(e) {
       @keydown="onKey"
       @blur="open = false"
       @focus="warmUp(); open = results.length > 0 && !place"
-    />
+    ></textarea>
     <ul
       v-if="open"
       :id="`${id}-list`"
