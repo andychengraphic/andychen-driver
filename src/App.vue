@@ -11,6 +11,9 @@ import { route, rainAt } from './geo'
 const BOOKING_EMAIL = 'andy.chen6881@gmail.com'
 
 const pad = (n) => String(n).padStart(2, '0')
+// The clock, refreshed every 30 seconds (and on send) so fares and "time has passed" checks stay current.
+const now = ref(new Date())
+setInterval(() => { now.value = new Date() }, 30000)
 const todayLocal = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
 
 const form = reactive({
@@ -20,6 +23,10 @@ const form = reactive({
 const termsDialog = ref(null)
 const BAGS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']]
 const PAYMENTS = ['Credit Card', 'Cash', 'Zelle']
+// Roughly what fits in a Model S (front and rear trunks), counting a large bag as 3 small ones.
+const BAG_SPACE = { small: 1, medium: 2, large: 3 }
+const BAG_ROOM = 10
+const tooManyBags = computed(() => Object.entries(form.bags).reduce((n, [k, v]) => n + v * BAG_SPACE[k], 0) > BAG_ROOM)
 const origin = ref(null)
 const destination = ref(null)
 
@@ -29,26 +36,33 @@ const returnWeather = ref(null)
 const routeError = ref('')
 const routing = ref(false)
 
-// Re-route whenever both ends are chosen.
-watch([origin, destination], async ([a, b]) => {
+// Re-route whenever both ends are chosen. An answer for ends that have since changed is ignored.
+watch([origin, destination], async ([a, b], _, onCleanup) => {
+  let stale = false
+  onCleanup(() => { stale = true })
   trip.value = null
   routeError.value = ''
+  routing.value = false
   if (!a || !b) return
   routing.value = true
   try {
-    trip.value = await route(a, b)
+    const t = await route(a, b)
+    if (!stale) trip.value = t
   } catch {
-    routeError.value = "Couldn't map that route. Send the request anyway and I'll quote you directly."
+    if (!stale) routeError.value = "Couldn't map that route. Send the request anyway and I'll quote you directly."
   } finally {
-    routing.value = false
+    if (!stale) routing.value = false
   }
 })
 
 // Rain chance at pickup, when the date is close enough to forecast.
-watch([origin, () => form.date, () => form.time], async ([a, date, time]) => {
+watch([origin, () => form.date, () => form.time], async ([a, date, time], _, onCleanup) => {
+  let stale = false
+  onCleanup(() => { stale = true })
   weather.value = null
   if (!a || !date || !time) return
-  try { weather.value = await rainAt(a, date, time) } catch { weather.value = null }
+  const w = await rainAt(a, date, time).catch(() => null)
+  if (!stale) weather.value = w
 })
 
 // The return pickup defaults to the first pickup's day and follows it until changed, never earlier.
@@ -60,20 +74,23 @@ const returnTimeMin = computed(() => (form.returnDate && form.returnDate === for
 const returnTooEarly = computed(() => form.roundTrip && !!returnTimeMin.value && !!form.returnTime && form.returnTime < returnTimeMin.value)
 
 // Rain chance at the return pickup (the drop-off point).
-watch([() => form.roundTrip, destination, () => form.returnDate, () => form.returnTime], async ([round, b, date, time]) => {
+watch([() => form.roundTrip, destination, () => form.returnDate, () => form.returnTime], async ([round, b, date, time], _, onCleanup) => {
+  let stale = false
+  onCleanup(() => { stale = true })
   returnWeather.value = null
   if (!round || !b || !date || !time) return
-  try { returnWeather.value = await rainAt(b, date, time) } catch { returnWeather.value = null }
+  const w = await rainAt(b, date, time).catch(() => null)
+  if (!stale) returnWeather.value = w
 })
 
 const outbound = computed(() => {
   if (!trip.value || !form.date || !form.time) return null
-  return quote({ ...trip.value, origin: origin.value, destination: destination.value }, { date: form.date, time: form.time }, weather.value)
+  return quote({ ...trip.value, origin: origin.value, destination: destination.value }, { date: form.date, time: form.time }, weather.value, now.value)
 })
 // The ride back is priced as its own ride from drop-off to pickup, at the return time.
 const inbound = computed(() => {
   if (!form.roundTrip || !trip.value || !form.returnDate || !form.returnTime || returnTooEarly.value) return null
-  return quote({ ...trip.value, origin: destination.value, destination: origin.value }, { date: form.returnDate, time: form.returnTime }, returnWeather.value)
+  return quote({ ...trip.value, origin: destination.value, destination: origin.value }, { date: form.returnDate, time: form.returnTime }, returnWeather.value, now.value)
 })
 const estimate = computed(() => (form.roundTrip && !inbound.value ? null : outbound.value))
 const total = computed(() => estimate.value && estimate.value.total + (form.roundTrip ? inbound.value.total : 0))
@@ -118,7 +135,7 @@ const problems = computed(() => {
   if (!form.date) p.date = 'Please add a pickup date.'
   else if (form.date < todayLocal()) p.date = "The pickup date can't be before today."
   if (!form.time) p.time = 'Please add a pickup time.'
-  else if (form.date && pacificInstant(form.date, form.time) < new Date()) p.time = 'That pickup time has already passed.'
+  else if (form.date && pacificInstant(form.date, form.time) < now.value) p.time = 'That pickup time has already passed.'
   if (form.roundTrip) {
     if (!form.returnDate) p['return-date'] = 'Please add a return date.'
     else if (form.date && form.returnDate < form.date) p['return-date'] = "The return date can't be before the pickup date."
@@ -138,6 +155,8 @@ const problems = computed(() => {
 const touched = reactive({})
 const attempted = ref(false)
 const shown = (id) => (attempted.value || touched[id] ? problems.value[id] : '')
+// Ties a field to its shown problem, so screen readers read the two together.
+const invalid = (id) => (shown(id) ? { 'aria-invalid': 'true', 'aria-describedby': `${id}-error` } : {})
 // The send button looks disabled until nothing is left to fix. It isn't truly disabled (a disabled
 // button ignores taps), so a tap can still name the first field that needs attention.
 const incomplete = computed(() => Object.keys(problems.value).length > 0)
@@ -145,6 +164,7 @@ const incomplete = computed(() => Object.keys(problems.value).length > 0)
 async function submit() {
   errorText.value = ''
   attempted.value = true
+  now.value = new Date()
   const first = Object.values(problems.value)[0]
   if (first) { errorText.value = first; return }
   if (form.honey) return // filled in by a bot
@@ -256,11 +276,11 @@ function reset() {
           <div class="grid grid-cols-2 gap-6">
             <div>
               <FieldLabel id="date" text="Date" :ok="!problems['date']" :error="shown('date')" />
-              <input id="date" v-model="form.date" type="date" :min="todayLocal()" class="field" required />
+              <input id="date" v-model="form.date" v-bind="invalid('date')" type="date" :min="todayLocal()" class="field" required />
             </div>
             <div>
               <FieldLabel id="time" text="Time" :ok="!problems['time']" :error="shown('time')" />
-              <select id="time" v-model="form.time" class="field bg-page" :class="{ 'text-[#8a8a8a]': !form.time }" required>
+              <select id="time" v-model="form.time" v-bind="invalid('time')" class="field bg-page" :class="{ 'text-[#8a8a8a]': !form.time }" required>
                 <option value="" disabled>Select</option>
                 <option v-for="t in TIMES" :key="t.value" :value="t.value">{{ t.text }}</option>
               </select>
@@ -269,11 +289,11 @@ function reset() {
           <div v-if="form.roundTrip" class="grid grid-cols-2 gap-6">
             <div>
               <FieldLabel id="return-date" text="Return date" :ok="!problems['return-date']" :error="shown('return-date')" />
-              <input id="return-date" v-model="form.returnDate" type="date" :min="form.date || todayLocal()" class="field" required />
+              <input id="return-date" v-model="form.returnDate" v-bind="invalid('return-date')" type="date" :min="form.date || todayLocal()" class="field" required />
             </div>
             <div>
               <FieldLabel id="return-time" text="Return time" :ok="!problems['return-time']" :error="shown('return-time')" />
-              <select id="return-time" v-model="form.returnTime" class="field bg-page" :class="{ 'text-[#8a8a8a]': !form.returnTime }" required>
+              <select id="return-time" v-model="form.returnTime" v-bind="invalid('return-time')" class="field bg-page" :class="{ 'text-[#8a8a8a]': !form.returnTime }" required>
                 <option value="" disabled>Select</option>
                 <option v-for="t in TIMES" :key="t.value" :value="t.value" :disabled="!!returnTimeMin && t.value < returnTimeMin">{{ t.text }}</option>
               </select>
@@ -295,6 +315,7 @@ function reset() {
                 </select>
               </div>
             </div>
+            <p v-if="tooManyBags" class="mt-3 text-[16px] leading-snug text-mute" role="status">That's a lot of luggage for a Model S. I'll check it all fits when I confirm your ride.</p>
           </div>
         </fieldset>
 
@@ -347,16 +368,16 @@ function reset() {
           <legend class="tag mb-6">Contact</legend>
           <div>
             <FieldLabel id="name" text="Name" :ok="!problems['name']" :error="shown('name')" />
-            <input id="name" v-model.trim="form.name" class="field" autocomplete="name" required />
+            <input id="name" v-model.trim="form.name" v-bind="invalid('name')" class="field" autocomplete="name" required />
           </div>
           <div class="grid gap-8 sm:grid-cols-2 sm:gap-6">
             <div>
               <FieldLabel id="phone" text="Phone" :ok="!problems['phone']" :error="shown('phone')" />
-              <input id="phone" v-model.trim="form.phone" type="tel" class="field" autocomplete="tel" required />
+              <input id="phone" v-model.trim="form.phone" v-bind="invalid('phone')" type="tel" class="field" autocomplete="tel" required />
             </div>
             <div>
               <FieldLabel id="email" text="Email" :ok="!problems['email']" :error="shown('email')" />
-              <input id="email" v-model.trim="form.email" type="email" class="field" autocomplete="email" required />
+              <input id="email" v-model.trim="form.email" v-bind="invalid('email')" type="email" class="field" autocomplete="email" required />
             </div>
           </div>
           <div>
@@ -366,9 +387,9 @@ function reset() {
           <!-- Hidden from people; bots fill it in. -->
           <input v-model="form.honey" type="text" name="_honey" tabindex="-1" autocomplete="off" class="hidden" aria-hidden="true" />
 
-          <div role="radiogroup" aria-labelledby="payment-label" @focusout="touched.payment = true">
+          <div role="radiogroup" aria-labelledby="payment-label" v-bind="invalid('payment')" @focusout="touched.payment = true">
             <p id="payment-label" class="field-label">Payment method<span v-if="problems.payment" class="ml-0.5 text-[#c62828]" aria-hidden="true">*</span></p>
-            <p v-if="shown('payment')" class="text-[14px] leading-snug text-[#c62828]">{{ problems.payment }}</p>
+            <p v-if="shown('payment')" id="payment-error" class="text-[14px] leading-snug text-[#c62828]">{{ problems.payment }}</p>
             <div class="mt-3 flex flex-wrap gap-x-8 gap-y-3">
               <label v-for="method in PAYMENTS" :key="method" class="flex cursor-pointer items-center gap-3 text-[17px] text-mute">
                 <input v-model="form.payment" type="radio" name="payment" :value="method" class="size-5 shrink-0 cursor-pointer accent-ink" required />
@@ -378,9 +399,9 @@ function reset() {
           </div>
 
           <div>
-            <p v-if="shown('terms')" class="text-[14px] leading-snug text-[#c62828]">{{ problems.terms }}</p>
+            <p v-if="shown('terms')" id="terms-error" class="text-[14px] leading-snug text-[#c62828]">{{ problems.terms }}</p>
             <label for="terms" class="flex cursor-pointer items-start gap-3 text-[17px] leading-snug text-mute">
-              <input id="terms" v-model="form.terms" type="checkbox" class="mt-0.5 size-5 shrink-0 cursor-pointer accent-ink" required />
+              <input id="terms" v-model="form.terms" v-bind="invalid('terms')" type="checkbox" class="mt-0.5 size-5 shrink-0 cursor-pointer accent-ink" required />
               <span>I have read and agree to the Terms of Service, including the payment and cancellation policies.<span v-if="!form.terms" class="ml-0.5 text-[#c62828]" aria-hidden="true">*</span></span>
             </label>
             <button type="button" class="mt-2 ml-8 text-[14px] text-mute underline underline-offset-4 hover:text-ink" @click="termsDialog.open()">See Terms of Service</button>

@@ -7,7 +7,8 @@ import { cachedGuess, searchPlaces, warmUp } from '../geo'
 const props = defineProps({ id: String, label: String, placeholder: String, hint: String, ok: Boolean, error: String })
 const place = defineModel({ default: null })
 
-const text = ref('')
+// Starts from the chosen place, so a kept address (after "Book another ride") shows in the field.
+const text = ref(place.value?.label ?? '')
 const results = ref([])
 const open = ref(false)
 const active = ref(-1)
@@ -69,7 +70,8 @@ function onKey(e) {
       role="combobox"
       :aria-expanded="open"
       :aria-controls="`${id}-list`"
-      :aria-describedby="hint ? `${id}-hint` : undefined"
+      :aria-describedby="[hint && `${id}-hint`, error && `${id}-error`].filter(Boolean).join(' ') || undefined"
+      :aria-invalid="error ? 'true' : undefined"
       required
       @keydown="onKey"
       @blur="open = false"

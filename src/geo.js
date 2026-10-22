@@ -106,7 +106,7 @@ async function photonSearch(q) {
 
 export async function route(a, b) {
   const url = `https://router.project-osrm.org/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=false`
-  const res = await fetch(url)
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) }) // a stuck server shouldn't leave "Mapping your route…" up
   if (!res.ok) throw new Error('route failed')
   const data = await res.json()
   if (data.code !== 'Ok' || !data.routes?.length) throw new Error('no route')
@@ -119,7 +119,7 @@ export async function rainAt(place, date, time) {
   const days = (new Date(`${date}T12:00:00`) - new Date()) / 864e5
   if (days > 15 || days < -1) return null
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&hourly=precipitation_probability,precipitation&timezone=America%2FLos_Angeles&start_date=${date}&end_date=${date}`
-  const res = await fetch(url)
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
   if (!res.ok) return null
   const { hourly } = await res.json()
   const i = hourly.time.indexOf(`${date}T${time.slice(0, 2)}:00`)

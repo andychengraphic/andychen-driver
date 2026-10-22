@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "predeploy": "npm run build",
     "site": "andychendriver",
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],

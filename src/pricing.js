@@ -34,9 +34,10 @@ const VENUES = [
 ]
 
 // Local events with their own dates. Comic-Con moves each year: check and update these.
+// 2027 dates are from the 2026 Quick Guide, with preview night on July 21.
 const EVENTS = [
   { label: 'Comic-Con week', from: '2026-07-23', to: '2026-07-26', factor: 1.3 },
-  { label: 'Comic-Con week', from: '2027-07-22', to: '2027-07-25', factor: 1.3 },
+  { label: 'Comic-Con week', from: '2027-07-21', to: '2027-07-25', factor: 1.3 },
 ]
 
 const toRad = (d) => (d * Math.PI) / 180
