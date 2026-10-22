@@ -469,7 +469,7 @@ function reset() {
 
     <TermsDialog ref="termsDialog" @agree="form.terms = true" />
 
-    <footer class="tag pt-24 pb-8">
+    <footer class="tag pt-24 pb-8 text-center">
       <span>&copy; {{ new Date().getFullYear() }} Andy Chen</span>
     </footer>
   </div>
