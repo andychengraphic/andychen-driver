@@ -11,7 +11,7 @@ import { route, rainAt } from './geo'
 const BOOKING_ALIAS = 'c39b1f0c7fd39f3924086bdca52a2e00'
 
 // Shown on the page only once filled in. PHONE is written as customers should see it, e.g. '(619) 555-0123'.
-const PHONE = ''
+const PHONE = '(224) 678-6881'
 const PHONE_LINK = `tel:+1${PHONE.replace(/\D/g, '').slice(-10)}`
 const TCP_PERMIT = '' // CPUC charter-party carrier number, e.g. 'TCP 12345-P'
 const INSURED = false // true once commercial insurance is in place
