@@ -7,8 +7,8 @@ import { pacificInstant, quote, RATES } from './pricing'
 import { route, rainAt } from './geo'
 
 // Booking requests are emailed through FormSubmit (formsubmit.co), which needs no server.
-// The first request ever sent triggers a one-time activation email to this address.
-const BOOKING_EMAIL = 'andy.chen6881@gmail.com'
+// This is FormSubmit's random alias for the booking inbox, so the real address isn't in the page.
+const BOOKING_ALIAS = 'c39b1f0c7fd39f3924086bdca52a2e00'
 
 const pad = (n) => String(n).padStart(2, '0')
 // The clock, refreshed every 30 seconds (and on send) so fares and "time has passed" checks stay current.
@@ -177,7 +177,7 @@ async function submit() {
 
   status.value = 'sending'
   try {
-    const res = await fetch(`https://formsubmit.co/ajax/${BOOKING_EMAIL}`, {
+    const res = await fetch(`https://formsubmit.co/ajax/${BOOKING_ALIAS}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
@@ -210,7 +210,7 @@ async function submit() {
     status.value = 'sent'
   } catch {
     status.value = 'error'
-    errorText.value = `Your request didn't go through. Please try again, or email ${BOOKING_EMAIL}.`
+    errorText.value = `Your request didn't go through. Please try again in a few minutes.`
   }
 }
 
