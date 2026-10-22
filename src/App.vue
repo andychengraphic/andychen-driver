@@ -10,12 +10,9 @@ import { route, rainAt } from './geo'
 // This is FormSubmit's random alias for the booking inbox, so the real address isn't in the page.
 const BOOKING_ALIAS = 'c39b1f0c7fd39f3924086bdca52a2e00'
 
-// Shown on the page only once filled in. PHONE is written as customers should see it, e.g. '(619) 555-0123'.
+// PHONE is written as customers should see it, e.g. '(619) 555-0123'.
 const PHONE = '(224) 678-6881'
 const PHONE_LINK = `tel:+1${PHONE.replace(/\D/g, '').slice(-10)}`
-const TCP_PERMIT = '' // CPUC charter-party carrier number, e.g. 'TCP 12345-P'
-const INSURED = false // true once commercial insurance is in place
-const credentials = [TCP_PERMIT && `CPUC ${TCP_PERMIT}`, INSURED && 'Licensed and insured'].filter(Boolean).join(' · ')
 
 const pad = (n) => String(n).padStart(2, '0')
 // The clock, refreshed every 30 seconds (and on send) so fares and "time has passed" checks stay current.
@@ -474,7 +471,6 @@ function reset() {
 
     <footer class="tag pt-24 pb-8">
       <span>&copy; {{ new Date().getFullYear() }} Andy Chen</span>
-      <span v-if="credentials"> · {{ credentials }}</span>
     </footer>
   </div>
 </template>
