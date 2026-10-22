@@ -3,12 +3,19 @@ import { computed, reactive, ref, watch } from 'vue'
 import PlaceInput from './components/PlaceInput.vue'
 import FieldLabel from './components/FieldLabel.vue'
 import TermsDialog, { TERMS_UPDATED } from './components/TermsDialog.vue'
-import { pacificInstant, quote, RATES } from './pricing'
+import { nearAirport, pacificInstant, quote, RATES } from './pricing'
 import { route, rainAt } from './geo'
 
 // Booking requests are emailed through FormSubmit (formsubmit.co), which needs no server.
 // This is FormSubmit's random alias for the booking inbox, so the real address isn't in the page.
 const BOOKING_ALIAS = 'c39b1f0c7fd39f3924086bdca52a2e00'
+
+// Shown on the page only once filled in. PHONE is written as customers should see it, e.g. '(619) 555-0123'.
+const PHONE = ''
+const PHONE_LINK = `tel:+1${PHONE.replace(/\D/g, '').slice(-10)}`
+const TCP_PERMIT = '' // CPUC charter-party carrier number, e.g. 'TCP 12345-P'
+const INSURED = false // true once commercial insurance is in place
+const credentials = [TCP_PERMIT && `CPUC ${TCP_PERMIT}`, INSURED && 'Licensed and insured'].filter(Boolean).join(' · ')
 
 const pad = (n) => String(n).padStart(2, '0')
 // The clock, refreshed every 30 seconds (and on send) so fares and "time has passed" checks stay current.
@@ -17,7 +24,7 @@ setInterval(() => { now.value = new Date() }, 30000)
 const todayLocal = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
 
 const form = reactive({
-  roundTrip: false, date: '', time: '', returnDate: '', returnTime: '', passengers: 1,
+  roundTrip: false, date: '', time: '', returnDate: '', returnTime: '', passengers: 1, childSeats: 0, flight: '',
   bags: { small: 0, medium: 0, large: 0 }, name: '', phone: '', email: '', notes: '', payment: '', terms: false, honey: '',
 })
 const termsDialog = ref(null)
@@ -29,6 +36,11 @@ const BAG_ROOM = 10
 const tooManyBags = computed(() => Object.entries(form.bags).reduce((n, [k, v]) => n + v * BAG_SPACE[k], 0) > BAG_ROOM)
 const origin = ref(null)
 const destination = ref(null)
+// Asked only for airport rides, so arrivals and delays can be tracked.
+const airportRide = computed(() => nearAirport(origin.value) || nearAirport(destination.value))
+// Child seats count as passengers; the back seat takes 3 at most.
+const maxChildSeats = computed(() => Math.min(form.passengers, 3))
+watch(maxChildSeats, (max) => { if (form.childSeats > max) form.childSeats = max })
 
 const trip = ref(null) // { miles, minutes }
 const weather = ref(null)
@@ -161,6 +173,20 @@ const invalid = (id) => (shown(id) ? { 'aria-invalid': 'true', 'aria-describedby
 // button ignores taps), so a tap can still name the first field that needs attention.
 const incomplete = computed(() => Object.keys(problems.value).length > 0)
 
+// The automatic reply FormSubmit emails the customer: their request in plain words.
+function customerCopy(e) {
+  return [
+    `Thanks, ${form.name}. I've got your ride request:`,
+    `${prettyDate.value} at ${prettyTime.value}, from ${origin.value.label} to ${destination.value.label}.`,
+    form.roundTrip && `Return pickup ${prettyReturn.value}, from ${destination.value.label}.`,
+    `${form.passengers} passenger${form.passengers > 1 ? 's' : ''}${form.childSeats ? `, ${form.childSeats} child seat${form.childSeats > 1 ? 's' : ''} requested` : ''}. Paying by ${form.payment}.`,
+    e ? `Estimated fare: $${total.value}. The final fare is confirmed before the ride.` : "I'll send you a quote.",
+    "This isn't a confirmed booking yet. I'll confirm with you shortly by text or email.",
+    PHONE && `Questions? Call or text ${PHONE}.`,
+    'Andy Chen, Private Chauffeur',
+  ].filter(Boolean).join('\n\n')
+}
+
 async function submit() {
   errorText.value = ''
   attempted.value = true
@@ -192,17 +218,20 @@ async function submit() {
         'Drop-off': destination.value.label,
         'Return pickup': form.roundTrip ? `${prettyReturn.value}, from ${destination.value.label}` : 'None',
         Passengers: form.passengers,
+        'Child seats': form.childSeats ? `${form.childSeats} requested` : 'None',
+        ...(airportRide.value ? { Flight: form.flight.trim() || '(not given)' } : {}),
         Bags: `${form.bags.small} small, ${form.bags.medium} medium, ${form.bags.large} large`,
         Distance: trip.value ? `${trip.value.miles.toFixed(1)} mi, about ${Math.round(trip.value.minutes)} min` : 'Unknown',
         'Estimated fare': e ? `$${total.value}` : 'Not quoted',
         'Fare breakdown': breakdown,
         Name: form.name,
         Phone: form.phone,
-        Email: form.email,
+        email: form.email, // lower-case: FormSubmit sends its automatic reply to the field named email
         Notes: form.notes || '(none)',
         'Payment method': form.payment,
         'Terms of Service': `Accepted (version of ${TERMS_UPDATED})`,
         Directions: maps,
+        _autoresponse: customerCopy(e),
       }),
     })
     const data = await res.json().catch(() => ({}))
@@ -210,12 +239,12 @@ async function submit() {
     status.value = 'sent'
   } catch {
     status.value = 'error'
-    errorText.value = `Your request didn't go through. Please try again in a few minutes.`
+    errorText.value = `Your request didn't go through. Please try again in a few minutes${PHONE ? `, or call or text ${PHONE}` : ''}.`
   }
 }
 
 function reset() {
-  Object.assign(form, { roundTrip: false, date: '', time: '', returnDate: '', returnTime: '', passengers: 1, bags: { small: 0, medium: 0, large: 0 }, notes: '', terms: false })
+  Object.assign(form, { roundTrip: false, date: '', time: '', returnDate: '', returnTime: '', passengers: 1, childSeats: 0, flight: '', bags: { small: 0, medium: 0, large: 0 }, notes: '', terms: false })
   status.value = 'idle'
   attempted.value = false
   for (const id in touched) delete touched[id]
@@ -230,7 +259,10 @@ function reset() {
         <!-- Car pictogram (ISO 7001 PI TF 008). -->
         <svg class="size-[1em] shrink-0" viewBox="0 0 150 150" fill="currentColor" aria-hidden="true"><path d="M39.97,23.28c-5.95,0-9.19,5.09-10.82,10.82l-7.22,25.45h-3.22c-4.67,0-8.42,3.76-8.42,8.42v30.88c0,4.67,3.75,8.42,8.42,8.42h2.9c-.07.98-.12,2.08-.12,3.25v5.46c0,4.1.49,7.41,1.09,7.41h12.63c.6,0,1.09-3.3,1.09-7.41v-5.46c0-1.17-.05-2.27-.12-3.25h77.63c-.07.98-.12,2.08-.12,3.25v5.46c0,4.1.49,7.41,1.09,7.41h12.63c.6,0,1.09-3.3,1.09-7.41v-5.46c0-1.17-.05-2.27-.12-3.25h2.9c4.67,0,8.42-3.76,8.42-8.42v-30.88c0-4.67-3.76-8.42-8.42-8.42h-3.22l-7.22-25.45c-1.63-5.73-4.87-10.82-10.82-10.82H39.97ZM43.37,31.12h63.26c3.06,0,4.62,2.51,5.45,5.45l6.52,22.97H31.4l6.52-22.97c.84-2.94,2.39-5.45,5.45-5.45h0ZM34.59,67.37c6.64,0,12.02,5.38,12.02,12.02,0,6.64-5.38,12.02-12.02,12.02h0c-6.64,0-12.02-5.38-12.02-12.02h0c0-6.64,5.38-12.02,12.02-12.02ZM115.42,67.37c6.64,0,12.02,5.38,12.02,12.02,0,6.64-5.38,12.02-12.02,12.02h0c-6.64,0-12.02-5.38-12.02-12.02h0c0-6.64,5.38-12.02,12.02-12.02h0Z" /></svg>
       </p>
-      <p class="tag whitespace-nowrap">Private Chauffeur · San Diego</p>
+      <div class="flex flex-col items-end gap-1 max-sm:items-center">
+        <p class="tag whitespace-nowrap">Private Chauffeur · San Diego</p>
+        <a v-if="PHONE" :href="PHONE_LINK" class="tag whitespace-nowrap underline underline-offset-4 hover:text-ink">Call or text {{ PHONE }}</a>
+      </div>
     </header>
 
     <main class="flex-1">
@@ -245,7 +277,8 @@ function reset() {
         <p class="font-display text-[32px] leading-tight tracking-[-0.01em]">Request sent.</p>
         <p class="mt-3 text-mute">
           {{ prettyDate }} at {{ prettyTime }}, from {{ origin?.label }} to {{ destination?.label }}<template v-if="form.roundTrip">, returning {{ prettyReturn }}</template>.
-          I'll confirm shortly at {{ form.email }}.
+          I'll confirm shortly, and a copy of your request is on its way to {{ form.email }}.
+          <template v-if="PHONE">Questions? Call or text <a :href="PHONE_LINK" class="underline underline-offset-4">{{ PHONE }}</a>.</template>
         </p>
         <button type="button" class="tag mt-8 underline underline-offset-4 hover:text-ink" @click="reset">Book another ride</button>
       </div>
@@ -299,11 +332,27 @@ function reset() {
               </select>
             </div>
           </div>
-          <div class="max-w-[160px]">
-            <label for="pax" class="field-label">Passengers</label>
-            <select id="pax" v-model.number="form.passengers" class="field bg-page">
-              <option v-for="n in 4" :key="n" :value="n">{{ n }}</option>
-            </select>
+          <div v-if="airportRide">
+            <label for="flight" class="field-label">Flight number</label>
+            <p id="flight-hint" class="mt-1 text-[14px] leading-snug text-[#8a8a8a]">(Optional. Arriving or departing, so I can follow any delays.)</p>
+            <input id="flight" v-model="form.flight" class="field" placeholder="e.g. AS 1234" autocomplete="off" aria-describedby="flight-hint" />
+          </div>
+          <div>
+            <div class="grid max-w-[344px] grid-cols-2 gap-6">
+              <div>
+                <label for="pax" class="field-label">Passengers</label>
+                <select id="pax" v-model.number="form.passengers" class="field bg-page">
+                  <option v-for="n in 4" :key="n" :value="n">{{ n }}</option>
+                </select>
+              </div>
+              <div>
+                <label for="child-seats" class="field-label">Child seats</label>
+                <select id="child-seats" v-model.number="form.childSeats" class="field bg-page">
+                  <option v-for="n in maxChildSeats + 1" :key="n" :value="n - 1">{{ n - 1 }}</option>
+                </select>
+              </div>
+            </div>
+            <p v-if="form.childSeats" class="mt-3 text-[16px] leading-snug text-mute" role="status">Please add each child's age and weight in the notes, so I bring the right seat.</p>
           </div>
           <div>
             <p class="field-label">Bags</p>
@@ -382,7 +431,7 @@ function reset() {
           </div>
           <div>
             <label for="notes" class="field-label">Notes</label>
-            <textarea id="notes" v-model="form.notes" rows="2" class="field resize-none" placeholder="Flight number, stops"></textarea>
+            <textarea id="notes" v-model="form.notes" rows="2" class="field resize-none" placeholder="Stops, or anything I should know"></textarea>
           </div>
           <!-- Hidden from people; bots fill it in. -->
           <input v-model="form.honey" type="text" name="_honey" tabindex="-1" autocomplete="off" class="hidden" aria-hidden="true" />
@@ -425,6 +474,7 @@ function reset() {
 
     <footer class="tag pt-24 pb-8">
       <span>&copy; {{ new Date().getFullYear() }} Andy Chen</span>
+      <span v-if="credentials"> · {{ credentials }}</span>
     </footer>
   </div>
 </template>

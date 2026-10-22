@@ -22,6 +22,7 @@ export const RATES = {
 }
 
 const AIRPORT = { lat: 32.7338, lon: -117.1933, radiusKm: 1.6 }
+export const nearAirport = (p) => !!p && kmBetween(AIRPORT, p) < AIRPORT.radiusKm
 
 // Places where demand spikes when crowds leave. Only applies in the evening.
 const VENUES = [
@@ -152,7 +153,7 @@ export function quote(trip, when, weather = null, now = new Date()) {
   const hoursAhead = (pacificInstant(when.date, when.time) - now) / 36e5
 
   const nearVenue = VENUES.find((v) => kmBetween(v, trip.origin) < 0.8)
-  const atAirport = [trip.origin, trip.destination].some((p) => kmBetween(AIRPORT, p) < AIRPORT.radiusKm)
+  const atAirport = [trip.origin, trip.destination].some(nearAirport)
   const event = EVENTS.find((e) => when.date >= e.from && when.date <= e.to)
 
   const factors = [
