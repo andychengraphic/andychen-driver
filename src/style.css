@@ -1,0 +1,63 @@
+@import 'tailwindcss';
+
+@theme {
+  /* Neue Haas Grotesk (the original Helvetica), loaded from Adobe Fonts in index.html.
+     Adobe numbers the Display cuts one step off their names: 400 = 45 Light, 500 = 55 Roman,
+     600 = 65 Medium, 700 = 75 Bold. (The family has no semibold.)
+     All text is Display 65 Medium (weight 600), sized up for easy reading: the kit's Text family
+     has no Medium. */
+  --font-sans: 'neue-haas-grotesk-display', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-display: 'neue-haas-grotesk-display', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --color-page: #e8e8e8; /* light grey background */
+  --color-ink: #000000; /* black text */
+  --color-mute: #3f3f3f; /* secondary text: labels, fare breakdown (dark enough to read easily) */
+  --color-line: #c4c4c4;
+  --color-field: #f2f2f2;
+}
+
+@layer base {
+  body {
+    @apply bg-page text-ink font-sans antialiased;
+    font-size: 20px;
+    font-weight: 600; /* 65 Medium */
+    line-height: 1.5;
+    letter-spacing: 0.012em; /* Display is set tight; a little air helps at reading sizes */
+  }
+  :focus-visible { outline: 1px solid var(--color-ink); outline-offset: 3px; }
+  ::selection { background: var(--color-ink); color: var(--color-page); }
+  /* Native date and time pickers use light-theme controls. */
+  input[type='date'], input[type='time'] { color-scheme: light; }
+  /* iPhone draws date boxes taller than other fields; a fixed height keeps date and time side by
+     side with their labels and underlines level. */
+  input[type='date'], select.field { height: 56px; }
+  input[type='date'] { -webkit-appearance: none; appearance: none; }
+  input[type='date']::-webkit-date-and-time-value { text-align: left; margin: 0; }
+}
+
+/* Underlined form field, no box. */
+@utility field {
+  width: 100%;
+  min-height: 56px;
+  background: transparent;
+  border-bottom: 1.5px solid var(--color-line);
+  padding: 12px 0;
+  color: var(--color-ink);
+  transition: border-color 0.2s;
+  &::placeholder { color: #8a8a8a; }
+  &:focus { outline: none; border-color: var(--color-ink); }
+}
+
+@utility tag {
+  font-size: 17px;
+  color: var(--color-mute);
+}
+
+/* Form field titles: a step up from tag. */
+@utility field-label {
+  font-size: 20px;
+  color: var(--color-mute);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
