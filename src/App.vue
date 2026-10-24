@@ -267,7 +267,11 @@ function reset() {
       <div class="mt-4 flex items-center gap-4 max-sm:justify-center">
         <p class="text-mute">Tesla Model S</p>
         <!-- White Model S, side view (photo with the background removed). -->
-        <img src="/tesla-model-s.png" alt="" width="90" height="27" class="w-[90px] shrink-0" />
+        <span class="relative shrink-0">
+          <!-- Soft ground shadow under the tires. -->
+          <span class="absolute inset-x-[6px] -bottom-[3px] h-[6px] rounded-[50%] bg-black/50 blur-[2.5px]" aria-hidden="true"></span>
+          <img src="/tesla-model-s.png" alt="" width="90" height="27" class="relative block w-[90px]" />
+        </span>
       </div>
 
       <div v-if="status === 'sent'" class="mt-14 max-w-[52ch] border-t border-line pt-8" role="status">
